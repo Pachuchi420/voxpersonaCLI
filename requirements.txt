@@ -1,0 +1,18 @@
+# Backend service dependencies (BackService.py + friends)
+# Target: macOS (Apple Silicon), TTS engine selectable at runtime (kokoro or chatterbox)
+
+# Core
+websockets
+numpy
+torch
+torchaudio
+soundfile
+silero-vad
+
+# Transcription (macOS backend, auto-selected via platform.system() == "Darwin")
+mlx
+parakeet_mlx
+
+# TTS engines (DialogueService picks one via the `engine` constructor arg)
+kokoro
+chatterbox-tts
