@@ -187,6 +187,12 @@ class ChatApp:
             self.status_var.set("Listening...")
             self.client.muted = False
             self.mute_btn.config(text="Mute")
+            # Unmuting only starts the mic *streaming to* the server -- the
+            # server itself ignores incoming audio bytes until it gets an
+            # explicit "listen" (is_listening starts False in BackService.py's
+            # handle()), so without this the mic runs but nothing ever reaches
+            # VAD.
+            self.client.send_control({"type": "listen", "is_last": False})
 
         elif etype == "_error":
             self.status_var.set(f"Error: {event['message']}")
