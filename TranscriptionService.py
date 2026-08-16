@@ -108,6 +108,13 @@ def _load_sherpa():
         sample_rate=settings.SAMPLE_RATE,
         feature_dim=80,
         decoding_method="greedy_search",
+        # Without this, current sherpa-onnx releases fail with "'vocab_size'
+        # does not exist in the metadata" -- this NeMo-exported model doesn't
+        # populate the generic transducer metadata fields sherpa-onnx expects
+        # by default, and needs the NeMo-specific decoder path instead. Model
+        # files themselves are correct as downloaded; don't modify them (see
+        # https://github.com/k2-fsa/sherpa-onnx/issues/2226).
+        model_type="nemo_transducer",
     )
     return _sherpa_recognizer
 

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# Downloaded sherpa-onnx model weights (~670MB) -- see TranscriptionService.py's
+# _load_sherpa() for the download source; not something to commit.
+sherpa_model/
