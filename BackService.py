@@ -10,12 +10,15 @@ from DialogueService import (
     DialogueService, _all_turns_cached, load_cached_clips, _backchannel_pools_cached,
     pick_backchannel_audio, is_repeat_request, pick_repeat_response_audio,
 )
+from ResponseService import ResponseService
 
 
-# `python BackService.py 1` selects sherpa-onnx instead of the default ASR
-# backend (MLX on Mac, NeMo "checkpoint" elsewhere) -- lets the two be A/B
-# tested on the same Windows machine without touching code.
-_TRANSCRIPTION_BACKEND = "sherpa" if len(sys.argv) > 1 and sys.argv[1] == "1" else None
+# `python BackService.py 1` selects sherpa-onnx and `python BackService.py 2`
+# selects Gemma 4 E2B, instead of the default ASR backend (MLX on Mac, NeMo
+# "checkpoint" elsewhere) -- lets these be A/B tested on the same machine
+# without touching code.
+_BACKEND_FLAGS = {"1": "sherpa", "2": "gemma"}
+_TRANSCRIPTION_BACKEND = _BACKEND_FLAGS.get(sys.argv[1]) if len(sys.argv) > 1 else None
 
 vad_service = VADService()
 transcription_service = TranscriptionService(backend=_TRANSCRIPTION_BACKEND)
@@ -31,6 +34,7 @@ async def sendClips(websocket, clips):
         await websocket.send(json.dumps({
             "type": "dialogue",
             "audio": audio_base64,
+            "text": clip.get("text", ""),
             "index": clip["index"]
         }))
 
@@ -87,6 +91,15 @@ async def handle(websocket):
     # Whole-script setting (not per-turn like affirm_enabled): whether to check
     # the participant's utterance for a "please repeat that" request.
     current_repeat_enabled = False
+    # Defaults to "scripted" (a no-op -- see ResponseService) until a
+    # start_dialogue payload opts into "responseEngine": "gemma", which
+    # makes the agent's replies dynamically generated instead of read
+    # verbatim off the script's pre-authored turns.
+    response_service = ResponseService()
+    # Rolling {"role": "user"|"assistant", "text": ...} history fed to
+    # ResponseService.generate() for context. Only populated/consumed when
+    # response_service.enabled() -- stays empty and unused for scripted runs.
+    conversation_history: list = []
     # Mirrors what Unity assembles client-side from transcription_partial events,
     # so the repeat-request check has the full utterance to match against without
     # a round trip back to Unity or a second transcription pass.
@@ -178,24 +191,41 @@ async def handle(websocket):
                 tts_voice = settings.get("ttsVoice", "am_adam")
                 language = settings.get("language") or "english"
                 lang_lower = language.lower()
+                response_engine = settings.get("responseEngine", "scripted")
 
                 current_engine = tts_engine
                 current_voice = tts_voice
                 current_language = lang_lower
                 current_repeat_enabled = repeat_enabled
+                response_service = ResponseService(engine=response_engine, persona=script.get("persona"))
+                conversation_history = []
 
                 turns_cached = cache_audio_locally and script_id and _all_turns_cached(script_id, turns, tts_engine, tts_voice, lang_lower)
                 # Backchannel pools are always persistent (see prepare_backchannel_pools),
                 # so their cache readiness doesn't depend on cache_audio_locally.
                 backchannel_ready = _backchannel_pools_cached(tts_engine, tts_voice, lang_lower, affirmation_enabled, repeat_enabled)
 
-                if turns_cached and backchannel_ready:
+                # The cache-only fast path skips loading a DialogueService entirely --
+                # fine for a purely scripted run, but a "gemma" response engine needs
+                # a live DialogueService.runTTS() later to voice each dynamically
+                # generated reply, so that path must always build one.
+                if turns_cached and backchannel_ready and not response_service.enabled():
                     print("[Cache] All turns + backchannel pools cached, skipping TTS model load")
                     clips = load_cached_clips(script_id, turns, tts_engine, tts_voice, lang_lower)
                     await sendClips(websocket, clips)
                     continue
 
                 dialogue_service = DialogueService(engine=tts_engine, language=language)
+
+                if response_service.enabled():
+                    # Seed context with the script's own turns (if any) so the
+                    # first dynamically generated reply isn't starting blind.
+                    for turn in turns:
+                        text = turn.get("text", "")
+                        if not text:
+                            continue
+                        role = "assistant" if turn.get("type") == "agent" else "user"
+                        conversation_history.append({"role": role, "text": text})
 
                 if not backchannel_ready:
                     await dialogue_service.prepare_backchannel_pools(
@@ -309,6 +339,27 @@ async def handle(websocket):
                         vad_service.reset()
                         accumulated_transcript = ""
                     else:
+                        if response_service.enabled() and accumulated_transcript:
+                            # Dynamic reply path: generate the agent's next line
+                            # from the conversation so far (instead of reading it
+                            # off the script) and voice it through the same
+                            # DialogueService the scripted turns use, then send it
+                            # as an ordinary "dialogue" clip so Unity's playback
+                            # path doesn't need to know it wasn't pre-authored.
+                            conversation_history.append({"role": "user", "text": accumulated_transcript})
+                            loop = asyncio.get_running_loop()
+                            try:
+                                reply_text = await loop.run_in_executor(None, response_service.generate, conversation_history)
+                            except Exception as e:
+                                print(f"[Response] Generation failed: {e}", flush=True)
+                                reply_text = ""
+
+                            if reply_text and dialogue_service is not None:
+                                conversation_history.append({"role": "assistant", "text": reply_text})
+                                print(f"[Response] Generated reply: {reply_text!r}", flush=True)
+                                reply_audio = await dialogue_service.runTTS(reply_text, current_voice or "default")
+                                await sendClips(websocket, [{"text": reply_text, "audio": reply_audio["audio"], "index": 0}])
+
                         await websocket.send(json.dumps({
                             "type": "transcription_done"
                         }))
@@ -328,8 +379,12 @@ async def handle(websocket):
 
 
 async def main():
-    async with websockets.serve(handle, "localhost", 8765):
-        print("voxPersona-service running on localhost:8765")
+    # ping_timeout is generous (not the 20s default) because Gemma inference for
+    # response generation can legitimately take well over a minute on CPU/MPS --
+    # the default was killing the connection with "keepalive ping timeout" before
+    # the reply ever reached the client, even though the server was still working.
+    async with websockets.serve(handle, "localhost", 8765, ping_interval=20, ping_timeout=180):
+        print("voxPersona-service running on localhost:8765", flush=True)
         await asyncio.Future()
 
 asyncio.run(main())

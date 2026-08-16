@@ -25,13 +25,15 @@ if USE_MLX:
     # Loading it inside the executor's single worker thread instead (see
     # _init_mlx_thread) keeps model + all inference on one consistent thread.
 
-# NeMo and sherpa-onnx are both loaded lazily (only when a TranscriptionService
-# actually selects that backend), not at import time -- a Windows run might
-# ask for either one via the `backend` constructor arg, and eagerly loading
-# NeMo here regardless would waste startup time (or hard-crash) when only
-# sherpa-onnx was wanted, and vice versa.
+# NeMo, sherpa-onnx and Gemma are all loaded lazily (only when a
+# TranscriptionService actually selects that backend), not at import time --
+# a run might ask for any one of them via the `backend` constructor arg, and
+# eagerly loading all three regardless would waste startup time (or
+# hard-crash, or trigger an unwanted multi-GB Hugging Face download) when
+# only one was actually wanted.
 _nemo_model = None
 _sherpa_recognizer = None
+_gemma_loaded = False
 
 
 def _load_nemo():
@@ -110,6 +112,24 @@ def _load_sherpa():
     return _sherpa_recognizer
 
 
+def _load_gemma():
+    """Loads Gemma 4 E2B via GemmaService (downloading it from Hugging Face
+    on first use -- see GemmaService.ensure_loaded). Returns a truthy
+    sentinel rather than the raw model/processor pair:
+    TranscriptionService.model is only ever used as a "is a backend loaded"
+    marker on this path (actual inference goes through
+    GemmaService.transcribe_audio in _transcribe_array_sync), matching how
+    self.model is used for the other non-MLX backends."""
+    global _gemma_loaded
+    if _gemma_loaded:
+        return True
+
+    from GemmaService import ensure_loaded
+    ensure_loaded()
+    _gemma_loaded = True
+    return True
+
+
 _mlx_thread_local = threading.local()
 
 
@@ -120,11 +140,12 @@ def _init_mlx_thread():
 
 class TranscriptionService:
     def __init__(self, backend: str | None = None):
-        # backend is one of "mlx", "nemo", "sherpa". Defaults to platform-
-        # based auto-detection when not passed explicitly, preserving prior
-        # behavior: MLX streaming on Mac, NeMo (the "NeMo checkpoint") on
-        # everything else. Windows callers can override via BackService.py's
-        # CLI flag to A/B test sherpa-onnx instead.
+        # backend is one of "mlx", "nemo", "sherpa", "gemma". Defaults to
+        # platform-based auto-detection when not passed explicitly,
+        # preserving prior behavior: MLX streaming on Mac, NeMo (the "NeMo
+        # checkpoint") on everything else. Callers can override via
+        # BackService.py's CLI flag to A/B test sherpa-onnx or Gemma 4 E2B
+        # instead.
         self.backend = backend or ("mlx" if USE_MLX else "nemo")
         self.use_mlx = self.backend == "mlx"
 
@@ -134,6 +155,8 @@ class TranscriptionService:
             self.model = _load_nemo()
         elif self.backend == "sherpa":
             self.model = _load_sherpa()
+        elif self.backend == "gemma":
+            self.model = _load_gemma()
         else:
             raise ValueError(f"Unknown transcription backend: {self.backend!r}")
 
@@ -163,7 +186,7 @@ class TranscriptionService:
 
     def _transcribe_array_sync(self, audio_f32: np.ndarray) -> str:
         """One-shot transcription of a full array. Only used for the non-MLX
-        (NeMo/sherpa-onnx) fallbacks, neither of which has an add_audio()-
+        (NeMo/sherpa-onnx/Gemma) fallbacks, none of which has an add_audio()-
         style streaming API wired up here -- MLX sessions never call this,
         they use add_audio() incrementally."""
         if len(audio_f32) < settings.SAMPLE_RATE:
@@ -178,6 +201,10 @@ class TranscriptionService:
             # object with a .text attribute depending on version/example --
             # handle both rather than guessing wrong and silently breaking.
             return result.text if hasattr(result, "text") else result
+
+        if self.backend == "gemma":
+            from GemmaService import transcribe_audio
+            return transcribe_audio(audio_f32, settings.SAMPLE_RATE)
 
         import tempfile, soundfile as sf
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -202,16 +229,18 @@ class TranscriptionSession:
     worker thread (self._service._executor) to preserve the model's
     thread-affine stream context.
 
-    The non-MLX (NeMo, Windows) path has no equivalent incremental-cache
-    API wired up here -- NeMo exposes real cache-aware streaming, but only
-    through a much lower-level, manually-threaded-cache API, not a simple
-    add_audio() call. As a middle ground, this path re-transcribes the
-    accumulated buffer-so-far on every feed() (same as the old MLX
-    behavior), but relies on the module-level change_attention_model() call
-    to a local/limited-context window so that cost stays roughly linear in
-    buffer length instead of ~quadratic, and on VADService's
-    MAX_BUFFER_SECONDS cap to bound the worst case. Not as fast as true
-    incremental streaming, but avoids the growing-utterance latency spikes.
+    The non-MLX (NeMo/sherpa-onnx/Gemma) path has no equivalent incremental-
+    cache API wired up here -- NeMo exposes real cache-aware streaming, but
+    only through a much lower-level, manually-threaded-cache API, not a
+    simple add_audio() call, and Gemma's audio encoder has no streaming API
+    at all. As a middle ground, this path re-transcribes the accumulated
+    buffer-so-far on every feed() (same as the old MLX behavior), but relies
+    on NeMo's module-level change_attention_model() call to a local/limited-
+    context window (not applicable to sherpa-onnx or Gemma) so that cost
+    stays roughly linear in buffer length instead of ~quadratic where
+    possible, and on VADService's MAX_BUFFER_SECONDS cap to bound the worst
+    case regardless of backend. Not as fast as true incremental streaming,
+    but avoids the growing-utterance latency spikes.
     """
 
     def __init__(self, service: TranscriptionService):
