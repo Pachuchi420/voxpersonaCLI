@@ -10,7 +10,7 @@ title_art = font.renderText("voxPersona")
 DESCRIPTIONS = {
     "text_mode" : "Chat with voxPersona via text input.",
     "audio_mode" : "Chat with voxPersona via audio input.",
-    "settings" : "Manage user setttings.",
+    "settings" : "Manage user settings.",
     "exit" : "Quit voxPersona."
 }
 
@@ -75,3 +75,8 @@ class MainMenuScreen(Screen):
         elif option_id == "audio_mode": 
             from tui.screens.audio_chat import AudioChatScreen
             self.app.push_screen(AudioChatScreen())
+        elif option_id == "settings": 
+                from tui.screens.settings import SettingsScreen
+                self.app.push_screen(SettingsScreen())
+        elif option_id == "audio_mode": 
+                self.app.exit()
