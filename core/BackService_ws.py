@@ -4,17 +4,13 @@ import json
 import base64
 import sys
 import time
-from VADService import VADService
-from TranscriptionService import TranscriptionService
-from DialogueService import (
+from .VADService import VADService
+from .TranscriptionService import TranscriptionService
+from .DialogueService import (
     DialogueService, _all_turns_cached, load_cached_clips, _backchannel_pools_cached,
     pick_backchannel_audio, is_repeat_request, pick_repeat_response_audio,
 )
 
-
-# `python BackService.py 1` selects sherpa-onnx instead of the default ASR
-# backend (MLX on Mac, NeMo "checkpoint" elsewhere) -- lets the two be A/B
-# tested on the same Windows machine without touching code.
 _TRANSCRIPTION_BACKEND = "sherpa" if len(sys.argv) > 1 and sys.argv[1] == "1" else None
 
 vad_service = VADService()
@@ -79,38 +75,16 @@ async def handle(websocket):
     dialogue_service = None
     is_listening = False
     affirm_enabled = False
-    # Set from the script's start_dialogue payload; used to pick a backchannel
-    # clip from the pre-generated pool when a "thinking_pause" fires mid-listen.
     current_engine = None
     current_voice = None
     current_language = "english"
-    # Whole-script setting (not per-turn like affirm_enabled): whether to check
-    # the participant's utterance for a "please repeat that" request.
     current_repeat_enabled = False
-    # Mirrors what Unity assembles client-side from transcription_partial events,
-    # so the repeat-request check has the full utterance to match against without
-    # a round trip back to Unity or a second transcription pass.
     accumulated_transcript = ""
-    # One TranscriptionSession per utterance -- created on "listen", fed
-    # incrementally on each partial_ready, finished on silence_detected. See
-    # TranscriptionService.TranscriptionSession for why this replaced
-    # re-transcribing the whole buffer from scratch on every call.
     session = None
-    # Most recently created handle_partial task. Tracked so silence_detected
-    # can await it before finish() -- feed() calls must land on the session
-    # in order (each one is a required audio increment now, not a
-    # replaceable whole-buffer transcription), so this can no longer be
-    # cancelled/discarded the way the old redundant-partial design could.
     pending_partial_task = None
 
     async def handle_partial(audio_bytes):
-        # Runs as a background task -- affirmations/silence handling (see
-        # "thinking_pause"/"silence_detected" below) are driven purely by
-        # VAD timing and must never sit behind a transcription call.
-        # feed() is now cheap (only the new audio since the last call, not
-        # the whole utterance), so in practice this finishes quickly, but it
-        # still stays non-blocking here since VAD timing must never depend
-        # on transcription speed.
+
         nonlocal accumulated_transcript
         t0 = time.monotonic()
         text = await session.feed(audio_bytes)
@@ -332,4 +306,5 @@ async def main():
         print("voxPersona-service running on localhost:8765")
         await asyncio.Future()
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main()) 
