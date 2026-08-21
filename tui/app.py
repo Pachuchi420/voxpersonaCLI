@@ -1,7 +1,7 @@
 from textual.app import App
 from tui.screens.main_menu import MainMenuScreen
 from textual.theme import Theme
-
+from core.llm import ensure_server_running
 
 
 voxBlue_theme = Theme(
@@ -18,6 +18,7 @@ voxBlue_theme = Theme(
 
 class ConvoTUI(App):
     def on_mount(self) -> None: 
+        ensure_server_running()
         self.register_theme(voxBlue_theme)
         self.theme = 'voxBlue'
         self.push_screen(MainMenuScreen())
