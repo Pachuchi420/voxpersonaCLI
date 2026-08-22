@@ -9,7 +9,7 @@ from typing import Any
 mx: Any = None
 
 import numpy as np
-import settings
+import core.settings as settings
 
 
 USE_MLX = platform.system() == "Darwin"
@@ -17,19 +17,6 @@ USE_MLX = platform.system() == "Darwin"
 if USE_MLX:
     import mlx.core as _mx
     mx = _mx
-    # NOT loading the model here. from_pretrained() below builds MLX arrays
-    # that get bound to whichever thread calls it -- loading it on the main
-    # thread (as this used to) and later running inference from a
-    # ThreadPoolExecutor worker throws "There is no Stream(...) in current
-    # thread", because that worker never owned the model's stream context.
-    # Loading it inside the executor's single worker thread instead (see
-    # _init_mlx_thread) keeps model + all inference on one consistent thread.
-
-# NeMo and sherpa-onnx are both loaded lazily (only when a TranscriptionService
-# actually selects that backend), not at import time -- a Windows run might
-# ask for either one via the `backend` constructor arg, and eagerly loading
-# NeMo here regardless would waste startup time (or hard-crash) when only
-# sherpa-onnx was wanted, and vice versa.
 _nemo_model = None
 _sherpa_recognizer = None
 

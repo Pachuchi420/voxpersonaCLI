@@ -1,9 +1,11 @@
 from textual.screen import Screen
 from textual.app import ComposeResult
-from textual.widgets import Static, Header, RichLog, Input
+from textual.widgets import Static, Header, RichLog, Input, Button
 from textual.binding import Binding
 from textual.containers import Vertical, Horizontal
 from core.llm import generate_reply
+from core.RecordingService import RecordingService
+from core.TranscriptionService import TranscriptionService
 import core.llm as llm
 
 class TextChatScreen(Screen): 
@@ -13,46 +15,54 @@ class TextChatScreen(Screen):
 
 
     CSS = """
-        #transcript {
-            border: none;
-            padding: 1 2;
-            width: 100%;
-            scrollbar-color: $accent;
-            scrollbar-background: $surface;
-            background: transparent;
-            scrollbar-size: 1 1;
-        }
+    #transcript {
+        border: none;
+        padding: 1 2;
+        width: 100%;
+        scrollbar-color: $accent;
+        scrollbar-background: $surface;
+        background: transparent;
+        scrollbar-size: 1 1;
+    }
 
-        #chat_input {
-            margin: 0 2 1 2;
-        }
-        
-        
-        #sidebar {
-            width: 15%;
-            border-right: solid $accent;
-            padding: 1 2;
-        }
+    #input_area {
+        height: auto;
+        margin: 0 2 1 2;
+    }
 
-        #chat_area {
-            width: 1fr;
-        }
+    #chat_input {
+        width: 1fr;
+    }
 
+    #voice_button {
+        width: auto;
+        margin-left: 1;
+    }
 
-        #status {
-            color: $accent;
-            content-align: center middle;
-            height: 1;
-            padding: 0 2;
-        }
+    #sidebar {
+        width: 15%;
+        border-right: solid $accent;
+        padding: 1 2;
+    }
 
-        #pending_reply {
-            color: #0077b6;
-            text-style: bold;
-            padding: 0 2;
-            height: auto;
-        }
-    """
+    #chat_area {
+        width: 1fr;
+    }
+
+    #status {
+        color: $accent;
+        content-align: center middle;
+        height: 1;
+        padding: 0 2;
+    }
+
+    #pending_reply {
+        color: #0077b6;
+        text-style: bold;
+        padding: 0 2;
+        height: auto;
+    }
+"""
 
 
 
@@ -66,7 +76,9 @@ class TextChatScreen(Screen):
              with Vertical(id="chat_area"): 
                 yield RichLog(id="transcript", wrap=True, markup=True)
                 yield Static("", id="pending_reply")
-                yield Input(placeholder="Type a message...", id="chat_input")
+                with Horizontal(id='input_area'):
+                    yield Input(placeholder="Type a message...", id="chat_input")
+                    yield Button('Start', id='voice_button')
                 yield Static("", id="status")
 
 
@@ -83,6 +95,9 @@ class TextChatScreen(Screen):
         self.conversation_history = []
         self.thinking_dots = 0
         self.thinking_timer = None
+        self.is_recording = False 
+        self.transcription_service = TranscriptionService()
+        self.recording_service = RecordingService()
         self.query_one("#chat_input", Input).focus()
         self.run_worker(self.ensure_model, thread=True)
 
@@ -97,6 +112,22 @@ class TextChatScreen(Screen):
             status.update("Press Esc again to exit to the main menu")
 
 
+    def handle_user_command(self, user_text: str) -> bool:
+         commands = {
+              "/clear" : self.command_clear_text,
+              "/help" : self.command_help
+         }
+
+         handler = commands.get(user_text.strip())
+
+         if handler is None: 
+              return False
+
+         handler()
+         return True
+
+         
+
     async def on_input_submitted(self, event: Input.Submitted) -> None: 
         # Resets leave armed if we type something
         self.leave_armed = False 
@@ -109,9 +140,68 @@ class TextChatScreen(Screen):
 
         if not user_text.strip(): 
              return 
+
+        if self.handle_user_command(user_text):
+             return
+
+
+        
         transcript.write(f"[bold #00d9ff]You:[/] {user_text}")
-        reply_text = await generate_reply(user_text)
+        self.run_worker(self.wait_for_answer(user_text))
+
+    async def wait_for_answer(self, user_text) -> None:
+        self.conversation_history.append({"role": "user", "content": user_text})
+
+        reply_text = await generate_reply(self.conversation_history)
+
+        self.conversation_history.append({"role": "assistant", "content": reply_text})
+
+        transcript = self.query_one("#transcript", RichLog)
         transcript.write(f"[bold #0077b6]Agent:[/] {reply_text}")
+
+
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == 'voice_button': 
+             self.toggle_recording()
+
+
+    async def transcribe_and_send(self, pcm_bytes: bytes) -> None:
+        session = self.transcription_service.start_session()
+        text = await session.finish(pcm_bytes)
+        text = text.strip()
+
+        if not text:
+            return
+
+        transcript = self.query_one("#transcript", RichLog)
+        transcript.write(f"[bold #00d9ff]You (voice):[/] {text}")
+
+        self.run_worker(self.wait_for_answer(text))
+
+    def toggle_recording(self): 
+         self.is_recording = not self.is_recording
+         voice_button = self.query_one("#voice_button", Button)
+
+         if self.is_recording:
+            voice_button.label = "⏹"
+            self.recording_service.start()
+         else:
+            voice_button.label = "▶"
+            pcm_bytes = self.recording_service.stop()
+            self.run_worker(self.transcribe_and_send(pcm_bytes))
+
+
+
+    # User commands 
+    def command_clear_text(self) -> None: 
+        transcript = self.query_one("#transcript", RichLog)
+        transcript.clear()
+        self.conversation_history = []
+
+    def command_help(self) -> None:
+        transcript = self.query_one("#transcript", RichLog)
+        transcript.write("[bold #00d9ff]Available commands:[/] /clear, /help")  
 
 
         

@@ -1,12 +1,24 @@
 import httpx 
 import time 
 import subprocess
+import platform
 
 ollama_url = "http://localhost:11434"
-model_name = "gemma4:e4b"
 
 
-def is_ollama_running() -> bool:
+
+def determine_system() -> bool: 
+    try: 
+        import mlx.core as mx
+        return mx.default_device().type == mx.DeviceType.gpu
+    except ImportError: 
+        return False
+
+
+model_name = "gemma4:e4b-mlx" if determine_system() else "gemma4:e4b"
+
+
+def is_llm_running() -> bool:
     try: 
         httpx.get(f"{ollama_url}/api/tags", timeout=1.0)
         return True
@@ -14,11 +26,11 @@ def is_ollama_running() -> bool:
         return False
 
 def ensure_server_running() -> None:
-    if is_ollama_running():
+    if is_llm_running():
         return
     subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(20):
-        if is_ollama_running():
+        if is_llm_running():
             return
         time.sleep(0.5)
     raise RuntimeError("Ollama server didn't start in time.")
@@ -30,10 +42,10 @@ def ensure_model_pulled(model_name: str) -> None:
     if model_name not in models:
         subprocess.run(["ollama", "pull", model_name], check=True)   
 
-async def generate_reply(user_text : str) -> str: 
+async def generate_reply(messages: list[dict]) -> str:
     payload = {
-        "model" : model_name, 
-        "messages" : [{"role" : "user", "content" : user_text}],
+        "model" : model_name,
+        "messages" : messages,
         "stream" : False,
     }
 

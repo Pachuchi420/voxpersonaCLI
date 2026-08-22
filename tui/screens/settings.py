@@ -5,6 +5,7 @@ from textual.widgets.option_list import Option
 from textual.binding import Binding
 from textual.containers import Vertical
 import core.llm as llm
+from core.llm import determine_system
 import pyfiglet
 
 font = pyfiglet.Figlet(font='larry3d')
@@ -81,15 +82,18 @@ class SettingsScreen(Screen):
         option_id = event.option_id or ""
 
         if option_id == "model_toggle":
-            self._toggle_model()
+            self.toggle_model()
         elif option_id == "back":
             self.app.pop_screen()
 
-    def _toggle_model(self) -> None:
-        llm.model_name = "gemma4:e2b" if llm.model_name == "gemma4:e4b" else "gemma4:e4b"
+    def toggle_model(self) -> None:
+        suffix = "-mlx" if determine_system() else ""
+
+
+        llm.model_name = f"gemma4:e2b{suffix}" if llm.model_name == f"gemma4:e4b{suffix}" else f"gemma4:e4b{suffix}"
 
         option_list = self.query_one("#settings_list", OptionList)
         option_list.remove_option("model_toggle")
-        option_list.add_option(Option(f"Model: {llm.model_name}", id="model_toggle"))
+        option_list.add_option(Option(f"Model: {llm.model_name} {suffix}", id="model_toggle"))
 
         self.notify(f"Switched to {llm.model_name}")
