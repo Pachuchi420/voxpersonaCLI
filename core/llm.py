@@ -15,7 +15,7 @@ def determine_system() -> bool:
         return False
 
 
-model_name = "gemma4:e4b-mlx" if determine_system() else "gemma4:e4b"
+model_name = "gemma4:e2b-mlx" if determine_system() else "gemma4:e2b"
 
 
 def is_llm_running() -> bool:

@@ -5,23 +5,25 @@ CHANNELS = 1
 
 
 class RecordingService:
-    """Captures microphone audio into memory while active. No VAD, no
-    partial transcription -- just start/stop toggle, accumulate raw PCM16
-    bytes, hand the whole thing to TranscriptionService once stopped."""
 
     def __init__(self):
+
         self._stream: sd.InputStream | None = None
         self._chunks: list[bytes] = []
+        self._on_chunk = None
 
     def _callback(self, indata, frames, time, status) -> None:
         if status:
             print(f"[RecordingService] status: {status}", flush=True)
         self._chunks.append(indata.tobytes())
+        if self._on_chunk is not None: 
+            self._on_chunk(indata.tobytes())
 
-    def start(self) -> None:
+    def start(self, on_chunk=None) -> None:
         if self._stream is not None:
             return
         self._chunks = []
+        self._on_chunk = on_chunk
         self._stream = sd.InputStream(
             samplerate=settings.SAMPLE_RATE,
             channels=CHANNELS,

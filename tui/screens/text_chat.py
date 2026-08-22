@@ -6,7 +6,13 @@ from textual.containers import Vertical, Horizontal
 from core.llm import generate_reply
 from core.RecordingService import RecordingService
 from core.TranscriptionService import TranscriptionService
+import numpy as np
+import random
 import core.llm as llm
+
+BAR_CHARS = " ▁▂▃▄▅▆▇█"
+BAR_COUNT = 300
+MIC_LEVEL_REFERENCE = 4000  # rms value treated as "full height"
 
 class TextChatScreen(Screen): 
     BINDINGS = [
@@ -53,7 +59,7 @@ class TextChatScreen(Screen):
         color: $accent;
         content-align: center middle;
         height: 1;
-        padding: 0 2;
+        padding: 0 ;
     }
 
     #pending_reply {
@@ -61,6 +67,12 @@ class TextChatScreen(Screen):
         text-style: bold;
         padding: 0 2;
         height: auto;
+    }
+
+    #mic_level {
+        height: 1;
+        padding: 0 2;
+        color: #4caf50;
     }
 """
 
@@ -76,6 +88,7 @@ class TextChatScreen(Screen):
              with Vertical(id="chat_area"): 
                 yield RichLog(id="transcript", wrap=True, markup=True)
                 yield Static("", id="pending_reply")
+                yield Static("", id="mic_level", markup=True)
                 with Horizontal(id='input_area'):
                     yield Input(placeholder="Type a message...", id="chat_input")
                     yield Button('Start', id='voice_button')
@@ -95,7 +108,8 @@ class TextChatScreen(Screen):
         self.conversation_history = []
         self.thinking_dots = 0
         self.thinking_timer = None
-        self.is_recording = False 
+        self.is_recording = False
+        self.bar_weights = [random.uniform(0.4, 1.0) for _ in range(BAR_COUNT)]
         self.transcription_service = TranscriptionService()
         self.recording_service = RecordingService()
         self.query_one("#chat_input", Input).focus()
@@ -185,12 +199,24 @@ class TextChatScreen(Screen):
 
          if self.is_recording:
             voice_button.label = "⏹"
-            self.recording_service.start()
+            self.recording_service.start(on_chunk=self.on_pcm_chunk)
          else:
             voice_button.label = "▶"
             pcm_bytes = self.recording_service.stop()
             self.run_worker(self.transcribe_and_send(pcm_bytes))
 
+
+    def update_waveform(self, level: float) -> None:
+        bars = "".join(
+            BAR_CHARS[min(8, int(level * weight * 8))] for weight in self.bar_weights
+        )
+        self.query_one("#mic_level", Static).update(bars)
+
+    def on_pcm_chunk(self, chunk: bytes) -> None:
+        samples = np.frombuffer(chunk, dtype="int16")
+        rms = np.sqrt(np.mean(samples.astype("float32") ** 2))
+        level = min(1.0, rms / MIC_LEVEL_REFERENCE)
+        self.app.call_from_thread(self.update_waveform, level)
 
 
     # User commands 
