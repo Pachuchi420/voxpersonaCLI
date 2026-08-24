@@ -19,6 +19,14 @@ if USE_MLX:
     mx = _mx
 _nemo_model = None
 _sherpa_recognizer = None
+_gemma_loaded = False
+
+# Mutable app-wide preference, same pattern as core/llm.py's model_name --
+# SettingsScreen toggles this directly, TextChatScreen/AudioChatScreen read
+# it when constructing their own TranscriptionService. None means "auto"
+# (mlx on Darwin, nemo elsewhere), matching TranscriptionService.__init__'s
+# own default.
+DEFAULT_BACKEND: str | None = None
 
 
 def _load_nemo():
@@ -97,6 +105,24 @@ def _load_sherpa():
     return _sherpa_recognizer
 
 
+def _load_gemma():
+    """Loads Gemma 4 E2B via GemmaService (downloading it from Hugging Face
+    on first use -- see GemmaService.ensure_loaded). Returns a truthy
+    sentinel rather than the raw model/processor pair:
+    TranscriptionService.model is only ever used as a "is a backend loaded"
+    marker on this path (actual inference goes through
+    GemmaService.transcribe_audio in _transcribe_array_sync), matching how
+    self.model is used for the other non-MLX backends."""
+    global _gemma_loaded
+    if _gemma_loaded:
+        return True
+
+    from core.GemmaService import ensure_loaded
+    ensure_loaded()
+    _gemma_loaded = True
+    return True
+
+
 _mlx_thread_local = threading.local()
 
 
@@ -121,6 +147,8 @@ class TranscriptionService:
             self.model = _load_nemo()
         elif self.backend == "sherpa":
             self.model = _load_sherpa()
+        elif self.backend == "gemma":
+            self.model = _load_gemma()
         else:
             raise ValueError(f"Unknown transcription backend: {self.backend!r}")
 
@@ -165,6 +193,10 @@ class TranscriptionService:
             # object with a .text attribute depending on version/example --
             # handle both rather than guessing wrong and silently breaking.
             return result.text if hasattr(result, "text") else result
+
+        if self.backend == "gemma":
+            from core.GemmaService import transcribe_audio
+            return transcribe_audio(audio_f32, settings.SAMPLE_RATE)
 
         import tempfile, soundfile as sf
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:

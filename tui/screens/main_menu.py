@@ -75,8 +75,8 @@ class MainMenuScreen(Screen):
         elif option_id == "audio_mode": 
             from tui.screens.audio_chat import AudioChatScreen
             self.app.push_screen(AudioChatScreen())
-        elif option_id == "settings": 
+        elif option_id == "settings":
                 from tui.screens.settings import SettingsScreen
                 self.app.push_screen(SettingsScreen())
-        elif option_id == "audio_mode": 
+        elif option_id == "exit":
                 self.app.exit()

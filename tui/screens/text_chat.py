@@ -3,9 +3,10 @@ from textual.app import ComposeResult
 from textual.widgets import Static, Header, RichLog, Input, Button
 from textual.binding import Binding
 from textual.containers import Vertical, Horizontal
-from core.llm import generate_reply
+from core.llm import generate_reply_stream
 from core.RecordingService import RecordingService
 from core.TranscriptionService import TranscriptionService
+import core.TranscriptionService as transcription
 import numpy as np
 import random
 import core.llm as llm
@@ -110,7 +111,7 @@ class TextChatScreen(Screen):
         self.thinking_timer = None
         self.is_recording = False
         self.bar_weights = [random.uniform(0.4, 1.0) for _ in range(BAR_COUNT)]
-        self.transcription_service = TranscriptionService()
+        self.transcription_service = TranscriptionService(backend=transcription.DEFAULT_BACKEND)
         self.recording_service = RecordingService()
         self.query_one("#chat_input", Input).focus()
         self.run_worker(self.ensure_model, thread=True)
@@ -166,8 +167,17 @@ class TextChatScreen(Screen):
     async def wait_for_answer(self, user_text) -> None:
         self.conversation_history.append({"role": "user", "content": user_text})
 
-        reply_text = await generate_reply(self.conversation_history)
+        # RichLog only ever appends new lines -- it can't update text in
+        # place -- so the growing reply is shown here, in this separate
+        # widget, word by word as it streams in, and only committed to the
+        # permanent #transcript log once the full reply has arrived.
+        pending = self.query_one("#pending_reply", Static)
+        reply_text = ""
+        async for chunk in generate_reply_stream(self.conversation_history):
+            reply_text += chunk
+            pending.update(f"[bold #0077b6]Agent:[/] {reply_text}")
 
+        pending.update("")
         self.conversation_history.append({"role": "assistant", "content": reply_text})
 
         transcript = self.query_one("#transcript", RichLog)

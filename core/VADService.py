@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from silero_vad import load_silero_vad
-import settings
+import core.settings as settings
 
 
 class VADService:

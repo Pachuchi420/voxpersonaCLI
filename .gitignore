@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+.serena/
+.DS_Store

@@ -6,6 +6,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 import core.llm as llm
 from core.llm import determine_system
+import core.TranscriptionService as transcription
 import pyfiglet
 
 font = pyfiglet.Figlet(font='larry3d')
@@ -59,6 +60,7 @@ class SettingsScreen(Screen):
             with Vertical(id="menu"):
                 yield OptionList(
                     Option(f"Model: {llm.model_name}", id="model_toggle"),
+                    Option(f"Transcription: {transcription.DEFAULT_BACKEND or 'mlx'}", id="transcription_toggle"),
                     Option("Back", id="back"),
                     id="settings_list"
                 )
@@ -83,6 +85,8 @@ class SettingsScreen(Screen):
 
         if option_id == "model_toggle":
             self.toggle_model()
+        elif option_id == "transcription_toggle":
+            self.toggle_transcription()
         elif option_id == "back":
             self.app.pop_screen()
 
@@ -93,7 +97,20 @@ class SettingsScreen(Screen):
         llm.model_name = f"gemma4:e2b{suffix}" if llm.model_name == f"gemma4:e4b{suffix}" else f"gemma4:e4b{suffix}"
 
         option_list = self.query_one("#settings_list", OptionList)
-        option_list.remove_option("model_toggle")
-        option_list.add_option(Option(f"Model: {llm.model_name} {suffix}", id="model_toggle"))
+        # replace_option_prompt updates the option in place -- remove_option
+        # + add_option (the previous approach) re-appends at the *end* of
+        # the list instead, so the row jumps below "Back" every time you
+        # toggle it and the menu visibly scrambles itself.
+        option_list.replace_option_prompt("model_toggle", f"Model: {llm.model_name} {suffix}")
 
         self.notify(f"Switched to {llm.model_name}")
+
+    def toggle_transcription(self) -> None:
+        # None means "auto" (mlx on Darwin) -- see TranscriptionService.py.
+        transcription.DEFAULT_BACKEND = "gemma" if transcription.DEFAULT_BACKEND != "gemma" else None
+        label = transcription.DEFAULT_BACKEND or "mlx"
+
+        option_list = self.query_one("#settings_list", OptionList)
+        option_list.replace_option_prompt("transcription_toggle", f"Transcription: {label}")
+
+        self.notify(f"Transcription switched to {label}")

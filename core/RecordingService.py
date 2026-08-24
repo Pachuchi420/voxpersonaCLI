@@ -2,6 +2,14 @@ import sounddevice as sd
 import core.settings as settings
 
 CHANNELS = 1
+# 0.1s chunks -- without an explicit blocksize, PortAudio picks its own
+# (often larger, host-API-dependent) buffer size, which means callbacks
+# fire less often and in bigger bursts. For AudioChatScreen that directly
+# shows up as laggy-feeling VAD start/stop detection, since it only sees
+# new audio once per callback. This matches what TestChatUI.py (the
+# equivalent client on the gemmaTesting branch) used, where responsiveness
+# was already tuned and confirmed to feel smooth.
+BLOCKSIZE = int(settings.SAMPLE_RATE * 0.1)
 
 
 class RecordingService:
@@ -28,6 +36,8 @@ class RecordingService:
             samplerate=settings.SAMPLE_RATE,
             channels=CHANNELS,
             dtype="int16",
+            blocksize=BLOCKSIZE,
+            latency="low",
             callback=self._callback,
         )
         self._stream.start()
