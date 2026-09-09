@@ -1,0 +1,683 @@
+/* Theme = just a named set of these custom properties, swapped via
+   data-theme on <html> (see theme.js) -- everything else in this file
+   references the variables, not literal colors, so a theme switch
+   repaints the whole app with no other CSS involved. "paper" is the
+   :root default so an unthemed/pre-JS paint still looks right. */
+:root,
+:root[data-theme="paper"] {
+  --bg: #faf7f2;
+  --surface: #f1ece2;
+  --accent: #0d7a68;
+  --accent-dim: #4a9c8c;
+  --fg: #211f1a;
+  --fg-muted: #7a7368;
+  --border: #e4ddd0;
+  --danger: #b8463c;
+}
+
+/* Dialed back further than the first pass -- a muted, desaturated
+   teal-blue instead of anything neon, so it reads as calm rather than a
+   "hacker dark mode" cliche. */
+:root[data-theme="nightfall"] {
+  --bg: #0d1117;
+  --surface: #131e2a;
+  --accent: #4a9fb0;
+  --accent-dim: #35708a;
+  --fg: #b3c4cc;
+  --fg-muted: #6d8590;
+  --border: #202f3d;
+  --danger: #cf6459;
+}
+
+/* Warm neutral dark, deliberately *not* blue-tinted -- pairs with an
+   amber accent instead of cyan so it reads as a genuinely different
+   mood, not a hue-rotated copy of nightfall. */
+:root[data-theme="slate"] {
+  --bg: #191712;
+  --surface: #221f19;
+  --accent: #cf9a52;
+  --accent-dim: #a67d42;
+  --fg: #d6cfc1;
+  --fg-muted: #93897b;
+  --border: #2d2a22;
+  --danger: #d1665a;
+}
+
+/* Fully neutral/achromatic dark -- no blue or amber tint at all, the
+   calmest of the four. Accent is a soft steel blue-gray, just enough
+   color to still read as an accent without breaking the neutral mood. */
+:root[data-theme="grey"] {
+  --bg: #1c1c1e;
+  --surface: #262628;
+  --accent: #8fa4b8;
+  --accent-dim: #647b8b;
+  --fg: #d4d4d6;
+  --fg-muted: #8a8a8e;
+  --border: #333335;
+  --danger: #cc6b5f;
+}
+
+:root {
+  --sidebar-width: 240px;
+  --content-max: 54rem;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Author-stylesheet rules always beat the browser's built-in [hidden]
+   rule regardless of selector specificity, so anything below that also
+   sets its own `display` (e.g. .input-row's display: flex) needs this
+   to actually disappear when hidden -- otherwise the hidden attribute
+   is silently ignored and the element stays visible. */
+[hidden] {
+  display: none !important;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#topbar h1 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+#mode-toggle {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: 0.3rem 0.9rem;
+  border-radius: 5px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+#chat-title {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#sidebar {
+  width: var(--sidebar-width);
+  min-width: 180px;
+  max-width: 440px;
+  flex-shrink: 0;
+  padding: 0.85rem 0.85rem 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* A slim invisible drag target with a 1px line centered in it, rather
+   than a fixed border on #sidebar -- the line itself is what shows the
+   divider, so there's exactly one visual seam instead of a static
+   border plus a separate hover affordance drawn on top of it. */
+#sidebar-resizer {
+  width: 9px;
+  margin: 0 -5px 0 -4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+}
+
+#sidebar-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--border);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+#sidebar-resizer:hover::before,
+#sidebar-resizer.dragging::before {
+  background: var(--accent-dim);
+  width: 2px;
+}
+
+#new-chat-btn {
+  background: transparent;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  padding: 0.5rem;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+}
+
+#new-chat-btn:hover {
+  background: var(--surface);
+}
+
+#chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.chat-item:hover {
+  background: var(--surface);
+}
+
+.chat-item.active {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.chat-item .title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Absolutely positioned so the icons never occupy flex space -- the
+   title always gets the row's full width, and these overlay only while
+   actually shown. The gradient fades the (possibly truncated) title out
+   behind them instead of an abrupt edge. */
+.row-actions {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 0.15rem;
+  padding-left: 1.2rem;
+  background: linear-gradient(to right, transparent, var(--surface) 60%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.chat-item:hover .row-actions,
+.chat-item.active .row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-item.active .row-actions {
+  background: linear-gradient(to right, transparent, var(--accent) 60%);
+}
+
+.row-btn {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border-radius: 4px;
+  opacity: 0.75;
+}
+
+.row-btn:hover {
+  opacity: 1;
+  background: rgba(127, 127, 127, 0.18);
+}
+
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem 6%;
+}
+
+.msg {
+  max-width: var(--content-max);
+  margin: 0 0 1.3rem 0;
+  padding-left: 0.85rem;
+  border-left: 2px solid transparent;
+}
+
+.msg.user {
+  border-left-color: var(--accent);
+}
+
+.msg.assistant {
+  border-left-color: var(--accent-dim);
+}
+
+.msg .label {
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+  opacity: 0.9;
+}
+
+.msg.user .label {
+  color: var(--accent);
+}
+
+.msg.assistant .label {
+  color: var(--accent-dim);
+}
+
+/* Two-tier vertical rhythm: --gap-loose between different kinds of
+   blocks (a paragraph next to a list, a list next to a table, etc.) and
+   --gap-tight within one group of the same kind (list items, table
+   rows) -- so related content visibly clusters while still being
+   individually legible, instead of one flat spacing applied everywhere
+   regardless of what's actually adjacent to what. */
+.msg .content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  --gap-loose: 0.9em;
+  --gap-tight: 0.35em;
+}
+
+.msg .content p,
+.msg .content ul,
+.msg .content ol,
+.msg .content blockquote,
+.msg .content pre,
+.msg .content .table-wrap {
+  margin: var(--gap-loose) 0;
+}
+
+.msg .content ul, .msg .content ol {
+  padding-left: 1.4em;
+}
+
+.msg .content code {
+  background: var(--surface);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+  font-family: var(--mono);
+}
+
+.msg .content pre {
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+  font-family: var(--mono);
+}
+
+.msg .content pre code {
+  background: none;
+  padding: 0;
+}
+
+.msg .content strong {
+  color: var(--fg);
+}
+
+/* Headings and hr are real section breaks, not just another block --
+   more room above (separating from whatever came before) than below
+   (staying attached to the content that belongs to this section). */
+.msg .content h1, .msg .content h2, .msg .content h3,
+.msg .content h4, .msg .content h5, .msg .content h6 {
+  margin: 1.3em 0 0.5em;
+  line-height: 1.3;
+  color: var(--fg);
+}
+
+.msg .content h1 { font-size: 1.3em; }
+.msg .content h2 { font-size: 1.15em; }
+.msg .content h3, .msg .content h4, .msg .content h5, .msg .content h6 { font-size: 1em; }
+
+.msg .content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.3em 0;
+}
+
+.msg .content blockquote {
+  padding: 0.1em 0.9em;
+  border-left: 3px solid var(--accent-dim);
+  color: var(--fg-muted);
+}
+
+.msg .content a {
+  color: var(--accent);
+}
+
+.msg .content li {
+  margin: var(--gap-tight) 0;
+}
+
+.msg .content .table-wrap {
+  overflow-x: auto;
+}
+
+.msg .content table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.92em;
+}
+
+.msg .content th,
+.msg .content td {
+  border: 1px solid var(--border);
+  padding: 0.55em 0.8em;
+  text-align: left;
+}
+
+.msg .content th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.msg.thinking .content {
+  color: var(--fg-muted);
+}
+
+.thinking-dots span {
+  animation: blink 1.4s infinite both;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chat-textarea {
+  flex: 1;
+  resize: none;
+  max-height: 30vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  padding: 0.6rem 0.8rem;
+  font: inherit;
+}
+
+.chat-textarea:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.send-btn, #mute-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.1rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#dictate-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#dictate-btn.recording {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  animation: pulse-rec 1.2s infinite;
+}
+
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+#mute-btn.muted {
+  background: var(--danger);
+}
+
+#audio-controls {
+  align-items: center;
+}
+
+#audio-text-row {
+  border-top: none;
+  padding-top: 0;
+}
+
+#mic-level {
+  flex: 1;
+  height: 6px;
+  background: var(--surface);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#mic-level-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  transition: width 60ms linear;
+}
+
+#audio-status {
+  color: var(--fg-muted);
+  min-width: 8rem;
+  text-align: right;
+}
+
+#settings-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.settings-section {
+  margin-bottom: 2rem;
+}
+
+.settings-section h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin: 0 0 0.6rem;
+}
+
+.settings-hint {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.6rem;
+}
+
+.settings-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.settings-option {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-option:hover {
+  border-color: var(--accent-dim);
+}
+
+.settings-option.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+#theme-swatches {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.theme-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.theme-swatch .swatch-circle {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--swatch-bg);
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-swatch .swatch-circle::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 60%;
+  height: 60%;
+  background: var(--swatch-accent);
+  border-radius: 60% 0 0 0;
+}
+
+.theme-swatch.active .swatch-circle {
+  border-color: var(--accent);
+}
+
+.theme-swatch.active {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

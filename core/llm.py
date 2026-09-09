@@ -16,7 +16,25 @@ def determine_system() -> bool:
         return False
 
 
-model_name = "gemma4:e2b-mlx" if determine_system() else "gemma4:e2b"
+def model_tag(size: str) -> str:
+    """size is 'e2b' or 'e4b' -- preserves the mlx/non-mlx suffix logic
+    above so switching size doesn't also require the caller to know
+    which platform it's running on."""
+    return f"gemma4:{size}-mlx" if determine_system() else f"gemma4:{size}"
+
+
+def set_model_size(size: str) -> str:
+    """Mutable app-wide preference, same pattern as
+    core/TranscriptionService.py's DEFAULT_BACKEND -- the settings UI
+    calls this directly, and generate_reply_stream/generate_title below
+    pick up the new value on their next call since they read module_name
+    at call time, not at import time."""
+    global model_name
+    model_name = model_tag(size)
+    return model_name
+
+
+model_name = model_tag("e2b")
 
 
 def is_llm_running() -> bool:
@@ -77,4 +95,38 @@ async def generate_reply_stream(messages: list[dict], system_prompt: str | None 
                 content = json.loads(line).get("message", {}).get("content", "")
                 if content:
                     yield content
+
+
+async def generate_title(messages: list[dict]) -> str:
+    """One-shot (non-streaming) call asking for a short chat title based on
+    the conversation so far -- used to auto-name a new chat after its first
+    exchange, same idea as mainstream chat UIs. Falls back to a truncated
+    copy of the first user message if generation fails for any reason (bad
+    JSON, empty content, network hiccup) -- a so-so title beats a chat the
+    sidebar can't render or a naming step that can crash the conversation."""
+    prompt_messages = messages + [{
+        "role": "user",
+        "content": (
+            "Summarize this conversation in 3 to 5 words for a chat title. "
+            "Respond with only the title, no punctuation, no quotes."
+        ),
+    }]
+    payload = {
+        "model": model_name,
+        "messages": prompt_messages,
+        "stream": False,
+        "keep_alive": "30m",
+    }
+
+    fallback = next((m["content"] for m in messages if m.get("role") == "user"), "New Chat")
+    fallback = fallback.strip()[:40] or "New Chat"
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(f"{ollama_url}/api/chat", json=payload)
+            response.raise_for_status()
+            title = response.json()["message"]["content"].strip().strip('"').strip("'")
+        return title[:60] or fallback
+    except (httpx.HTTPError, KeyError, ValueError):
+        return fallback
 

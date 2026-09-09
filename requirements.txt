@@ -1,8 +1,14 @@
-# Backend service dependencies (BackService.py + friends)
+# Backend service dependencies (webapp/server.py + core/ + friends)
 # Target: macOS (Apple Silicon), TTS engine selectable at runtime (kokoro or chatterbox)
 
-# Core
+# Web app (webapp/server.py)
+fastapi
+uvicorn
+
+# core/BackService_ws.py, the separate legacy scripted-dialogue backend
 websockets
+
+# Core
 numpy
 torch
 torchaudio

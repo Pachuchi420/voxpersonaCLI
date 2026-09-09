@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>voxPersona</title>
+<link rel="stylesheet" href="/vendor/katex/katex.min.css" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <h1>voxPersona</h1>
+    <div id="mode-toggle" role="tablist">
+      <button class="mode-btn active" data-mode="text" role="tab" aria-selected="true">Text</button>
+      <button class="mode-btn" data-mode="audio" role="tab" aria-selected="false">Audio</button>
+      <button class="mode-btn" data-mode="settings" role="tab" aria-selected="false">Settings</button>
+    </div>
+    <div id="chat-title"></div>
+  </header>
+
+  <div id="body">
+    <aside id="sidebar">
+      <button id="new-chat-btn">+ New Chat</button>
+      <ul id="chat-list"></ul>
+    </aside>
+
+    <div id="sidebar-resizer"></div>
+
+    <main id="main">
+      <div id="transcript" aria-live="polite"></div>
+
+      <form id="text-input-row" class="input-row">
+        <button type="button" id="dictate-btn" title="Dictate">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <textarea id="text-input" class="chat-textarea" placeholder="Type a message&hellip;" rows="1"></textarea>
+        <button type="submit" id="send-btn" class="send-btn">Send</button>
+      </form>
+
+      <div id="audio-panel" hidden>
+        <div id="audio-controls" class="input-row">
+          <div id="mic-level"><div id="mic-level-bar"></div></div>
+          <button type="button" id="mute-btn">Mute</button>
+          <span id="audio-status">Listening&hellip;</span>
+        </div>
+        <form id="audio-text-row" class="input-row">
+          <textarea id="audio-text-input" class="chat-textarea" placeholder="Or type a message&hellip;" rows="1"></textarea>
+          <button type="submit" class="send-btn">Send</button>
+        </form>
+      </div>
+
+      <div id="settings-panel" hidden>
+        <section class="settings-section">
+          <h2>Theme</h2>
+          <div id="theme-swatches"></div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Model</h2>
+          <p class="settings-hint">Larger models are more capable but slower to respond.</p>
+          <div id="model-options" class="settings-options"></div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Transcription backend</h2>
+          <p class="settings-hint">Which speech-to-text engine handles the mic in Audio mode and dictation.</p>
+          <div id="transcription-options" class="settings-options"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/vendor/katex/katex.min.js"></script>
+<script src="/vendor/katex/auto-render.min.js"></script>
+<script src="/app.js" type="module"></script>
+</body>
+</html>
