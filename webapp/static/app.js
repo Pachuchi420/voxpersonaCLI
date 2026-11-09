@@ -5,11 +5,7 @@ import { AudioChat } from "./audio.js";
 import { Dictation } from "./dictate.js";
 import { Settings } from "./settings.js";
 import { initSidebarResize } from "./sidebar-resize.js";
-
-const ICON_PENCIL =
-  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const ICON_TRASH =
-  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+import { ICON_PENCIL, ICON_TRASH } from "./icons.js";
 
 const els = {
   sidebar: document.getElementById("sidebar"),
@@ -21,40 +17,91 @@ const els = {
   modeButtons: document.querySelectorAll(".mode-btn"),
   textInputRow: document.getElementById("text-input-row"),
   textInput: document.getElementById("text-input"),
+  sendBtn: document.getElementById("send-btn"),
   dictateBtn: document.getElementById("dictate-btn"),
   audioPanel: document.getElementById("audio-panel"),
   audioStatus: document.getElementById("audio-status"),
+  emotionDebug: document.getElementById("emotion-debug-body"),
   micBar: document.getElementById("mic-level-bar"),
   muteBtn: document.getElementById("mute-btn"),
+  webcamBtn: document.getElementById("webcam-btn"),
+  webcamWindow: document.getElementById("webcam-window"),
+  webcamHandle: document.getElementById("webcam-handle"),
+  webcamPreview: document.getElementById("webcam-preview"),
+  webcamOverlay: document.getElementById("webcam-overlay"),
+  webcamCanvas: document.getElementById("webcam-canvas"),
+  facialPanel: document.getElementById("facial-debug"),
+  facialDebug: document.getElementById("facial-debug-body"),
   audioTextRow: document.getElementById("audio-text-row"),
   audioTextInput: document.getElementById("audio-text-input"),
+  audioSendBtn: document.getElementById("audio-send-btn"),
   settingsPanel: document.getElementById("settings-panel"),
   themeSwatches: document.getElementById("theme-swatches"),
   modelOptions: document.getElementById("model-options"),
+  pullModelForm: document.getElementById("pull-model-form"),
+  pullModelInput: document.getElementById("pull-model-input"),
+  pullModelStatus: document.getElementById("pull-model-status"),
   transcriptionOptions: document.getElementById("transcription-options"),
+  faceOverlayOptions: document.getElementById("face-overlay-options"),
+  webcamIntervalSlider: document.getElementById("webcam-interval-slider"),
+  webcamIntervalValue: document.getElementById("webcam-interval-value"),
+  webcamSizeSlider: document.getElementById("webcam-size-slider"),
+  webcamSizeValue: document.getElementById("webcam-size-value"),
 };
 
 let mode = "text";
 let currentChatId = null;
 
-const textChat = new TextChat(els.transcript, els.title);
+// Stopping generation before any reply content has streamed back prunes
+// the now-childless message it was replying to server-side (see
+// run_generation in server.py) rather than leaving a dangling empty
+// turn -- so without this, whatever was typed would just be lost when
+// the next "sync" makes it disappear from the transcript.
+function restoreInput(textarea, text) {
+  textarea.value = text;
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+  textarea.focus();
+}
+
+const textChat = new TextChat(els.transcript, els.title, els.sendBtn);
 textChat.onTitle = () => refreshSidebar();
+textChat.onEmptyStop = (text) => restoreInput(els.textInput, text);
 
 const audioChat = new AudioChat({
   transcriptEl: els.transcript,
   titleEl: els.title,
   statusEl: els.audioStatus,
+  emotionEl: els.emotionDebug,
   micBarEl: els.micBar,
   muteBtn: els.muteBtn,
+  sendBtn: els.audioSendBtn,
+  webcamBtn: els.webcamBtn,
+  webcamWindowEl: els.webcamWindow,
+  webcamHandleEl: els.webcamHandle,
+  webcamPreviewEl: els.webcamPreview,
+  webcamOverlayEl: els.webcamOverlay,
+  webcamCanvasEl: els.webcamCanvas,
+  facialPanelEl: els.facialPanel,
+  facialEl: els.facialDebug,
 });
 audioChat.onTitle = () => refreshSidebar();
+audioChat.onEmptyStop = (text) => restoreInput(els.audioTextInput, text);
 
 const dictation = new Dictation({ button: els.dictateBtn, textarea: els.textInput });
 
 const settings = new Settings({
   themeContainer: els.themeSwatches,
   modelContainer: els.modelOptions,
+  pullForm: els.pullModelForm,
+  pullInput: els.pullModelInput,
+  pullStatus: els.pullModelStatus,
   transcriptionContainer: els.transcriptionOptions,
+  faceOverlayContainer: els.faceOverlayOptions,
+  webcamIntervalSlider: els.webcamIntervalSlider,
+  webcamIntervalValue: els.webcamIntervalValue,
+  webcamSizeSlider: els.webcamSizeSlider,
+  webcamSizeValue: els.webcamSizeValue,
 });
 
 async function refreshSidebar() {
@@ -120,6 +167,13 @@ function renderChatItem(chat) {
 }
 
 async function openChat(chatId) {
+  // Clicking a chat in the sidebar always means "show me this chat" --
+  // even if Settings (or the other mode) is currently the visible panel.
+  // Without this, loadChat/textChat.open below happened correctly in
+  // the background, but the Settings panel stayed on screen covering it.
+  setActiveTabButtons(mode);
+  showPanelsFor(mode);
+
   currentChatId = chatId;
   const data = await api.loadChat(mode, chatId).catch(() => null);
   if (mode === "text") {
@@ -181,13 +235,17 @@ els.modeButtons.forEach((btn) => {
 
 els.newChatBtn.addEventListener("click", () => startNewChat());
 
-function wireInputRow(row, textarea, sendFn) {
+function wireInputRow(row, textarea, chat) {
   row.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (chat.generating) {
+      chat.stop();
+      return;
+    }
     const text = textarea.value;
     textarea.value = "";
     textarea.style.height = "auto";
-    sendFn(text);
+    chat.send(text);
   });
 
   textarea.addEventListener("keydown", (event) => {
@@ -203,8 +261,8 @@ function wireInputRow(row, textarea, sendFn) {
   });
 }
 
-wireInputRow(els.textInputRow, els.textInput, (text) => textChat.send(text));
-wireInputRow(els.audioTextRow, els.audioTextInput, (text) => audioChat.send(text));
+wireInputRow(els.textInputRow, els.textInput, textChat);
+wireInputRow(els.audioTextRow, els.audioTextInput, audioChat);
 
 initSidebarResize(els.sidebar, els.sidebarResizer);
 

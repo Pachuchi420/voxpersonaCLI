@@ -1,21 +1,57 @@
 import { THEMES, getTheme, applyTheme } from "./theme.js";
+import { api } from "./api.js";
+import {
+  getFaceOverlayEnabled, setFaceOverlayEnabled,
+  getWebcamIntervalMs, setWebcamIntervalMs,
+  getWebcamMaxDimension, setWebcamMaxDimension,
+} from "./webcam-prefs.js";
 
-const MODEL_LABELS = { e2b: "E2B (faster)", e4b: "E4B (larger, slower)" };
 const BACKEND_LABELS = { auto: "Auto", mlx: "MLX", sherpa: "Sherpa-ONNX", gemma: "Gemma" };
+const ON_OFF = [false, true];
+const ON_OFF_LABELS = { false: "Off", true: "On" };
 
 export class Settings {
-  constructor({ themeContainer, modelContainer, transcriptionContainer }) {
+  constructor({
+    themeContainer, modelContainer, pullForm, pullInput, pullStatus, transcriptionContainer,
+    faceOverlayContainer, webcamIntervalSlider, webcamIntervalValue, webcamSizeSlider, webcamSizeValue,
+  }) {
     this.themeContainer = themeContainer;
     this.modelContainer = modelContainer;
+    this.pullForm = pullForm;
+    this.pullInput = pullInput;
+    this.pullStatus = pullStatus;
     this.transcriptionContainer = transcriptionContainer;
+    this.faceOverlayContainer = faceOverlayContainer;
+    this.webcamIntervalSlider = webcamIntervalSlider;
+    this.webcamIntervalValue = webcamIntervalValue;
+    this.webcamSizeSlider = webcamSizeSlider;
+    this.webcamSizeValue = webcamSizeValue;
+
+    this.pullForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const tag = this.pullInput.value.trim();
+      if (tag) this._pullModel(tag);
+    });
+
+    // Live-applied as you drag, same as a volume slider -- takes effect
+    // the next time the webcam's toggled on (see audio.js), not
+    // mid-stream, same reasoning as the other settings here.
+    this.webcamIntervalSlider.addEventListener("input", () => {
+      setWebcamIntervalMs(Number(this.webcamIntervalSlider.value));
+      this._updateWebcamSliderLabels();
+    });
+    this.webcamSizeSlider.addEventListener("input", () => {
+      setWebcamMaxDimension(Number(this.webcamSizeSlider.value));
+      this._updateWebcamSliderLabels();
+    });
   }
 
   async open() {
     this._renderThemes();
-    const settings = await fetch("/api/settings").then((r) => r.json());
-    this._renderOptions(this.modelContainer, settings.model_sizes, this._currentSize(settings.model), (size) =>
-      this._setModel(size)
-    );
+    this._renderFaceOverlay();
+    this._renderWebcamSliders();
+    const settings = await api.getSettings();
+    this._renderOptions(this.modelContainer, settings.models, settings.model, (model) => this._setModel(model), (id) => id);
     this._renderOptions(
       this.transcriptionContainer,
       settings.transcription_backends,
@@ -25,11 +61,32 @@ export class Settings {
     );
   }
 
-  _currentSize(modelTag) {
-    // modelTag looks like "gemma4:e2b-mlx" or "gemma4:e2b" -- pull just
-    // the size back out to match against model_sizes ("e2b"/"e4b").
-    const match = modelTag.match(/gemma4:(e\d+b)/);
-    return match ? match[1] : modelTag;
+  // Pure client-side preference (see webcam-prefs.js), not part of
+  // /api/settings -- nothing server-side needs to know whether the
+  // overlay is drawn, only whether a frame was sent at all (which stays
+  // under the Webcam button's own control, unaffected by this).
+  _renderFaceOverlay() {
+    this._renderOptions(
+      this.faceOverlayContainer,
+      ON_OFF,
+      getFaceOverlayEnabled(),
+      (enabled) => {
+        setFaceOverlayEnabled(enabled);
+        this._renderFaceOverlay();
+      },
+      (id) => ON_OFF_LABELS[id]
+    );
+  }
+
+  _renderWebcamSliders() {
+    this.webcamIntervalSlider.value = String(getWebcamIntervalMs());
+    this.webcamSizeSlider.value = String(getWebcamMaxDimension());
+    this._updateWebcamSliderLabels();
+  }
+
+  _updateWebcamSliderLabels() {
+    this.webcamIntervalValue.textContent = `${(getWebcamIntervalMs() / 1000).toFixed(1)}s`;
+    this.webcamSizeValue.textContent = `${getWebcamMaxDimension()}px`;
   }
 
   _renderThemes() {
@@ -50,7 +107,7 @@ export class Settings {
     }
   }
 
-  _renderOptions(container, options, current, onSelect, labelFor = (id) => MODEL_LABELS[id] || id) {
+  _renderOptions(container, options, current, onSelect, labelFor) {
     container.innerHTML = "";
     for (const id of options) {
       const btn = document.createElement("button");
@@ -62,15 +119,43 @@ export class Settings {
     }
   }
 
-  async _setModel(size) {
+  async _setModel(model) {
     this.modelContainer.querySelectorAll(".settings-option").forEach((btn) => (btn.disabled = true));
     try {
       await fetch("/api/settings/model", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ size }),
+        body: JSON.stringify({ model }),
       });
     } finally {
+      await this.open();
+    }
+  }
+
+  // "Plug and play": type any Ollama tag (e.g. one found on ollama.com's
+  // library) and it gets pulled, switched to, and shows up in the picker
+  // from then on -- no code change needed to add a new model.
+  async _pullModel(tag) {
+    this.pullInput.disabled = true;
+    this.pullForm.querySelector("button").disabled = true;
+    this.pullStatus.textContent = `Pulling ${tag}… this can take a while for a large model.`;
+    try {
+      const response = await fetch("/api/settings/models/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: tag }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || `${response.status} ${response.statusText}`);
+      }
+      this.pullInput.value = "";
+      this.pullStatus.textContent = "";
+    } catch (err) {
+      this.pullStatus.textContent = String(err.message || err);
+    } finally {
+      this.pullInput.disabled = false;
+      this.pullForm.querySelector("button").disabled = false;
       await this.open();
     }
   }

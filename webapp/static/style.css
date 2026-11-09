@@ -300,6 +300,7 @@ body {
 }
 
 .msg {
+  position: relative;
   max-width: var(--content-max);
   margin: 0 0 1.3rem 0;
   padding-left: 0.85rem;
@@ -314,12 +315,18 @@ body {
   border-left-color: var(--accent-dim);
 }
 
+.msg-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
 .msg .label {
   font-weight: 600;
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: 0.3rem;
   opacity: 0.9;
 }
 
@@ -329,6 +336,76 @@ body {
 
 .msg.assistant .label {
   color: var(--accent-dim);
+}
+
+/* Always visible when a message has more than one version -- this is
+   information (there's something to see here), not just an action, so
+   unlike .msg-actions below it doesn't hide behind hover. */
+.msg-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.nav-count {
+  min-width: 1.6em;
+  text-align: center;
+}
+
+/* Same "reserves no layout space until hovered" pattern as the sidebar's
+   rename/delete icons (see .row-actions) -- absolutely positioned so it
+   never squeezes the message content, and only shown on hover since,
+   unlike the branch nav above, these are actions rather than status. */
+.msg-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.msg:hover .msg-actions {
+  opacity: 1;
+}
+
+.edit-textarea {
+  width: 100%;
+  min-height: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.edit-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  border-radius: 8px;
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  cursor: pointer;
 }
 
 /* Two-tier vertical rhythm: --gap-loose between different kinds of
@@ -471,6 +548,7 @@ body {
 .chat-textarea {
   flex: 1;
   resize: none;
+  min-height: 2.75rem;
   max-height: 30vh;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -490,10 +568,16 @@ body {
   color: var(--bg);
   border: none;
   border-radius: 8px;
+  min-height: 2.75rem;
   padding: 0.6rem 1.1rem;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+}
+
+.send-btn.stop {
+  background: var(--danger);
+  color: #fff;
 }
 
 .send-btn:disabled {
@@ -506,6 +590,7 @@ body {
   border: 1px solid var(--border);
   color: var(--fg);
   border-radius: 8px;
+  min-height: 2.75rem;
   padding: 0.6rem 0.8rem;
   display: flex;
   align-items: center;
@@ -560,6 +645,154 @@ body {
   text-align: right;
 }
 
+/* Debug-stage emotion readouts (see EmotionService/detect_emotion and
+   FacialEmotionService/detect_face) -- a fixed overlay, stacked, rather
+   than inline in the input row so both stay visible regardless of
+   scroll position without disturbing the audio panel's own layout.
+   Deliberately small and muted since these are for sanity-checking each
+   model's output against what was actually said/shown, not a feature
+   surface yet -- hidden automatically along with #audio-panel
+   (display:none on an ancestor hides a position:fixed descendant too)
+   when you're not in Audio mode. */
+#debug-panels {
+  position: fixed;
+  top: calc(1rem + env(safe-area-inset-top, 0px));
+  right: 1rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+#emotion-debug,
+#facial-debug {
+  max-width: 13rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.debug-panel-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-dim);
+  margin-bottom: 0.3rem;
+}
+
+#emotion-debug-body,
+#facial-debug-body {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
+#webcam-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 8px;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#webcam-btn.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+#webcam-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Floating webcam preview -- draggable via #webcam-handle (plain JS
+   pointer drag, see audio.js) and resizable via the browser's native
+   CSS `resize` handle (bottom-right corner), so no custom resize logic
+   is needed. Positioned with explicit top/left (not the debug panels'
+   right-anchoring) since drag needs a fixed anchor corner to update. */
+#webcam-window {
+  /* top/left are set from JS each time it's shown (see _positionWebcamWindow
+     in audio.js), anchored to the bottom-right corner by default -- these
+     are just a fallback in case that runs before layout is ready. */
+  position: fixed;
+  top: 4.5rem;
+  left: 1rem;
+  z-index: 60;
+  width: 14rem;
+  height: 11rem;
+  min-width: 8rem;
+  min-height: 6.5rem;
+  max-width: 90vw;
+  max-height: 90vh;
+  resize: both;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+#webcam-handle {
+  flex-shrink: 0;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+
+#webcam-handle:active {
+  cursor: grabbing;
+}
+
+#webcam-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+#webcam-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Mirrored, same reasoning any video chat app mirrors a front-facing
+     camera preview -- matches what you'd see in a mirror, which is what
+     feels "correct" for your own face rather than disorienting. */
+  transform: scaleX(-1);
+}
+
+#webcam-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Deliberately NOT mirrored like #webcam-preview above -- audio.js
+     mirrors the box/keypoint *coordinates* it draws here instead, so
+     the emotion label text it also draws still reads correctly rather
+     than appearing backwards. */
+}
+
 #settings-panel {
   flex: 1;
   overflow-y: auto;
@@ -592,6 +825,67 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.settings-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.settings-slider-row > span:first-child {
+  min-width: 7rem;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.settings-slider-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.settings-slider-value {
+  min-width: 3.5rem;
+  text-align: right;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.pull-model-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.pull-model-row input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+}
+
+.pull-model-row input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.pull-model-row button:disabled,
+.settings-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#pull-model-status:empty {
+  display: none;
+}
+
+#pull-model-status {
+  margin-top: 0.5rem;
 }
 
 .settings-option {

@@ -1,5 +1,43 @@
 import argparse
 import asyncio
+import os
+import sys
+
+
+def _fix_broken_libexpat_link() -> None:
+    """Works around a broken dynamic-link on this kind of machine: some
+    Homebrew python@3.12 builds link pyexpat.so against
+    /usr/lib/libexpat.1.dylib, but if the system's copy is missing a
+    symbol the build expects (a Homebrew-bottle/macOS version mismatch),
+    importing plistlib raises ImportError -- which silently breaks
+    anything that needs it transitively (pip's own wheel-tag resolution,
+    funasr's deps for the emotion2vec backend, etc). Homebrew's own
+    `expat` package has the missing symbol; pointing the dynamic linker
+    at it fixes this, but DYLD_LIBRARY_PATH only takes effect at process
+    *launch* -- setting it from inside an already-running process has no
+    effect -- so if this process is affected, re-exec once with it set
+    rather than silently limping along broken.
+    """
+    if sys.platform != "darwin" or os.environ.get("_VOXPERSONA_EXPAT_FIX_APPLIED"):
+        return
+
+    import platform
+    if platform.mac_ver()[0]:
+        return  # not affected on this machine
+
+    expat_lib = "/opt/homebrew/opt/expat/lib"
+    if not os.path.isdir(expat_lib):
+        return  # nothing we can do -- not a Homebrew machine, or expat isn't installed
+
+    env = os.environ.copy()
+    existing = env.get("DYLD_LIBRARY_PATH", "")
+    env["DYLD_LIBRARY_PATH"] = f"{expat_lib}:{existing}" if existing else expat_lib
+    env["_VOXPERSONA_EXPAT_FIX_APPLIED"] = "1"
+    os.execve(sys.executable, [sys.executable] + sys.argv, env)
+
+
+_fix_broken_libexpat_link()
+
 
 def main():
     parser = argparse.ArgumentParser(prog="voxPersona")

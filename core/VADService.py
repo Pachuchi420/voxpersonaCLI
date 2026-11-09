@@ -59,6 +59,25 @@ class VADService:
         confidence = self.vad_model(tensor, settings.SAMPLE_RATE).item()
         return confidence > threshold
 
+    def force_finish(self):
+        """Manually ends the current utterance right now, as if
+        silence_detected had just fired -- for environments too noisy for
+        the speech/non-speech model to reliably recognize true silence on
+        its own (background chatter can keep is_speech_silero returning
+        True indefinitely, so silence_timer never reaches the 1.5s
+        threshold in process_pcm below). Returns the same event shape
+        silence_detected produces, so callers (see "finalize" in
+        server.py) can feed it through the exact same handling instead of
+        duplicating it. Returns None if nothing was actually in progress."""
+        if not self.was_speaking:
+            return None
+
+        audio = b"".join(self.unfed_frames)
+        self.unfed_frames = []
+        self.was_speaking = False
+        self.reset()
+        return {"type": "silence_detected", "audio": audio}
+
     def process_pcm(self, pcm_bytes: bytes):
         events = []
         self.message_buffer.extend(pcm_bytes)

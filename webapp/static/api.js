@@ -6,6 +6,9 @@ async function asJson(response) {
 }
 
 export const api = {
+  getSettings() {
+    return fetch("/api/settings").then(asJson);
+  },
   listChats(mode) {
     return fetch(`/api/chats/${mode}`).then(asJson);
   },

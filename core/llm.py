@@ -56,10 +56,30 @@ def ensure_server_running() -> None:
 
 
 def ensure_model_pulled(model_name: str) -> None:
+    if model_name not in list_installed_models():
+        subprocess.run(["ollama", "pull", model_name], check=True)
+
+
+def list_installed_models() -> list[str]:
+    """Whatever's actually pulled, straight from Ollama -- this is what
+    drives the Settings model picker, so picking up a new model is just
+    `ollama pull <tag>` (or the pull_model() below), no code change."""
     response = httpx.get(f"{ollama_url}/api/tags", timeout=5.0)
-    models = [m["name"] for m in response.json().get("models", [])]
-    if model_name not in models:
-        subprocess.run(["ollama", "pull", model_name], check=True)   
+    return sorted(m["name"] for m in response.json().get("models", []))
+
+
+def set_model(tag: str) -> str:
+    """Mutable app-wide preference, same pattern as
+    core/TranscriptionService.py's DEFAULT_BACKEND -- generate_reply_stream/
+    generate_title below read model_name at call time, not at import time,
+    so this takes effect on the next request with no other changes needed."""
+    global model_name
+    model_name = tag
+    return model_name
+
+
+def pull_model(tag: str) -> None:
+    subprocess.run(["ollama", "pull", tag], check=True)
 
 async def generate_reply_stream(messages: list[dict], system_prompt: str | None = None):
     """Yields the reply text incrementally as Ollama streams it back (NDJSON,

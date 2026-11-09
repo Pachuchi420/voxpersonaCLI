@@ -22,3 +22,14 @@ parakeet_mlx
 # TTS engines (DialogueService picks one via the `engine` constructor arg)
 kokoro
 chatterbox-tts
+
+# Voice emotion recognition (EmotionService, iic/emotion2vec_plus_base)
+funasr
+modelscope
+
+# Facial emotion recognition (FacialEmotionService): MediaPipe for face
+# detection/cropping, transformers for dima806/facial_emotions_image_detection
+mediapipe
+transformers
+opencv-python
+pillow

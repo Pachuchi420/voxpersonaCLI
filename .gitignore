@@ -3,3 +3,8 @@ __pycache__/
 .serena/
 .DS_Store
 chat_history/
+
+# Downloaded model weights (fetched at runtime -- see FacialEmotionService.py),
+# same as every other model here (Ollama pulls, HF hub cache, funasr/
+# modelscope cache): none of those are checked in, so this shouldn't be either.
+core/models/

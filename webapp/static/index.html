@@ -39,14 +39,42 @@
       </form>
 
       <div id="audio-panel" hidden>
+        <div id="debug-panels">
+          <div id="emotion-debug" title="Voice emotion detection (debug) -- full model output, for sanity-checking">
+            <div class="debug-panel-title">Emotion (debug)</div>
+            <div id="emotion-debug-body">Listening&hellip;</div>
+          </div>
+          <div id="facial-debug" title="Facial emotion detection (debug) -- full model output, for sanity-checking" hidden>
+            <div class="debug-panel-title">Face (debug)</div>
+            <div id="facial-debug-body">Starting camera&hellip;</div>
+          </div>
+        </div>
+
+        <!-- Floating, draggable (via #webcam-handle), resizable (native
+             CSS `resize`, see style.css) webcam preview -- independent
+             of the input row below so it can be moved/resized without
+             disturbing that layout. #webcam-canvas is an invisible
+             scratch buffer used only to encode frames to send to the
+             server, unrelated to #webcam-overlay which is the visible
+             box/keypoint drawing stacked on top of the video. -->
+        <div id="webcam-window" hidden>
+          <div id="webcam-handle">Webcam</div>
+          <div id="webcam-stage">
+            <video id="webcam-preview" autoplay playsinline muted></video>
+            <canvas id="webcam-overlay"></canvas>
+          </div>
+        </div>
+        <canvas id="webcam-canvas" hidden></canvas>
+
         <div id="audio-controls" class="input-row">
           <div id="mic-level"><div id="mic-level-bar"></div></div>
           <button type="button" id="mute-btn">Mute</button>
+          <button type="button" id="webcam-btn">Webcam</button>
           <span id="audio-status">Listening&hellip;</span>
         </div>
         <form id="audio-text-row" class="input-row">
           <textarea id="audio-text-input" class="chat-textarea" placeholder="Or type a message&hellip;" rows="1"></textarea>
-          <button type="submit" class="send-btn">Send</button>
+          <button type="submit" id="audio-send-btn" class="send-btn">Send</button>
         </form>
       </div>
 
@@ -58,14 +86,47 @@
 
         <section class="settings-section">
           <h2>Model</h2>
-          <p class="settings-hint">Larger models are more capable but slower to respond.</p>
+          <p class="settings-hint">Whatever's installed in Ollama shows up here automatically.</p>
           <div id="model-options" class="settings-options"></div>
+          <form id="pull-model-form" class="pull-model-row">
+            <input type="text" id="pull-model-input" placeholder="e.g. mparvin/dolphin-qwen3-4b-abliterated" />
+            <button type="submit" class="settings-option">Pull</button>
+          </form>
+          <p id="pull-model-status" class="settings-hint"></p>
         </section>
 
         <section class="settings-section">
           <h2>Transcription backend</h2>
           <p class="settings-hint">Which speech-to-text engine handles the mic in Audio mode and dictation.</p>
           <div id="transcription-options" class="settings-options"></div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Face mesh overlay (debug)</h2>
+          <p class="settings-hint">
+            Draws the detected face mesh and emotion label over the webcam preview in Audio mode. Doesn't
+            affect the webcam or detection themselves -- just whether the lines show up.
+          </p>
+          <div id="face-overlay-options" class="settings-options"></div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Webcam performance (debug)</h2>
+          <p class="settings-hint">
+            How often a frame is captured and how large it is before classifying it. Lower values track
+            expression more closely but cost more CPU, which competes with the reply/TTS during generation.
+            Takes effect next time the webcam's turned on.
+          </p>
+          <label class="settings-slider-row">
+            <span>Capture interval</span>
+            <input type="range" id="webcam-interval-slider" min="500" max="5000" step="250" />
+            <span id="webcam-interval-value" class="settings-slider-value"></span>
+          </label>
+          <label class="settings-slider-row">
+            <span>Frame size</span>
+            <input type="range" id="webcam-size-slider" min="160" max="960" step="40" />
+            <span id="webcam-size-value" class="settings-slider-value"></span>
+          </label>
         </section>
       </div>
     </main>
